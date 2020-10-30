@@ -1,21 +1,16 @@
 from __future__ import absolute_import, division, print_function
 
-import argparse
-import csv
-import json
 import logging
 import os
-import random
-import sys
 import re
 
 import pandas as pd
-import numpy as np
 
-logging.basicConfig(format = '%(asctime)s - %(levelname)s - %(name)s -   %(message)s',
-                    datefmt = '%m/%d/%Y %H:%M:%S',
-                    level = logging.INFO)
+logging.basicConfig(format='%(asctime)s - %(levelname)s - %(name)s -   %(message)s',
+                    datefmt='%m/%d/%Y %H:%M:%S',
+                    level=logging.INFO)
 logger = logging.getLogger(__name__)
+
 
 class InputExample(object):
     """A single training/test example for simple sequence classification."""
@@ -37,6 +32,7 @@ class InputExample(object):
         self.text_b = text_b
         self.label = label
 
+
 class InputFeatures(object):
     """A single set of features of data."""
 
@@ -48,27 +44,28 @@ class InputFeatures(object):
         self.valid_ids = valid_ids
         self.label_mask = label_mask
 
-def readfile(filename, eos_marks=['PERIOD', 'QMARK', 'EXCLAM']):
-  df = pd.read_csv(filename, encoding='utf-8', sep=' ', names=['token', 'label'], keep_default_na=False)
-  idx = 0
-  n_tokens = len(df)
-  paragraphs = []
-  token_labels = []
-  while idx < n_tokens and idx >= 0:
-    sub_df = df.iloc[idx: min(idx+128, n_tokens)]
-    end_idx = sub_df[sub_df.label.isin(eos_marks)].tail(1).index
-    if end_idx.empty:
-      end_idx = -1
-      paragraph_df = df.iloc[idx:]
-    else:
-      end_idx = end_idx.item() + 1
-      paragraph_df = df.iloc[idx: end_idx]
 
-    # numeric_labels = paragraph_df.label.apply(lambda l: punctuation_marks.index(l))
-    paragraphs.append(paragraph_df.token.values.tolist())
-    token_labels.append(paragraph_df.label.values.tolist())
-    idx = end_idx
-  return list(zip(paragraphs, token_labels))
+def readfile(filename, eos_marks=['PERIOD', 'QMARK', 'EXCLAM']):
+    df = pd.read_csv(filename, encoding='utf-8', sep=' ', names=['token', 'label'], keep_default_na=False)
+    idx = 0
+    n_tokens = len(df)
+    paragraphs = []
+    token_labels = []
+    while n_tokens > idx >= 0:
+        sub_df = df.iloc[idx: min(idx + 128, n_tokens)]
+        end_idx = sub_df[sub_df.label.isin(eos_marks)].tail(1).index
+        if end_idx.empty:
+            end_idx = -1
+            paragraph_df = df.iloc[idx:]
+        else:
+            end_idx = end_idx.item() + 1
+            paragraph_df = df.iloc[idx: end_idx]
+
+        # numeric_labels = paragraph_df.label.apply(lambda l: punctuation_marks.index(l))
+        paragraphs.append(paragraph_df.token.values.tolist())
+        token_labels.append(paragraph_df.label.values.tolist())
+        idx = end_idx
+    return list(zip(paragraphs, token_labels))
 
 
 class DataProcessor(object):
@@ -112,23 +109,24 @@ class PuncProcessor(DataProcessor):
     def get_labels(self):
         return ['O', 'PERIOD', 'COMMA', 'COLON', 'QMARK', 'EXCLAM', 'SEMICOLON', '[CLS]', '[SEP]']
 
-    def _create_examples(self,lines,set_type):
+    def _create_examples(self, lines, set_type):
         examples = []
-        for i,(sentence,label) in enumerate(lines):
+        for i, (sentence, label) in enumerate(lines):
             guid = "%s-%s" % (set_type, i)
             text_a = ' '.join(sentence)
             text_b = None
             label = label
-            examples.append(InputExample(guid=guid,text_a=text_a,text_b=text_b,label=label))
+            examples.append(InputExample(guid=guid, text_a=text_a, text_b=text_b, label=label))
         return examples
+
 
 def convert_examples_to_features(examples, label_list, max_seq_length, tokenizer):
     """Loads a data file into a list of `InputBatch`s."""
 
-    label_map = {label : i for i, label in enumerate(label_list,1)}
+    label_map = {label: i for i, label in enumerate(label_list, 1)}
 
     features = []
-    for (ex_index,example) in enumerate(examples):
+    for (ex_index, example) in enumerate(examples):
         textlist = example.text_a.split(' ')
         labellist = example.label
         tokens = []
@@ -137,7 +135,7 @@ def convert_examples_to_features(examples, label_list, max_seq_length, tokenizer
         label_mask = []
         for i, word in enumerate(textlist):
             if re.search(r'([+-]?\d+[\.,]?)+', word) is not None or word.isnumeric():
-              word = '<NUM>'
+                word = '<NUM>'
             token = tokenizer.tokenize(word)
             tokens.extend(token)
             label_1 = labellist[i]
@@ -158,8 +156,8 @@ def convert_examples_to_features(examples, label_list, max_seq_length, tokenizer
         label_ids = []
         ntokens.append("[CLS]")
         segment_ids.append(0)
-        valid.insert(0,1)
-        label_mask.insert(0,1)
+        valid.insert(0, 1)
+        label_mask.insert(0, 1)
         label_ids.append(label_map["[CLS]"])
         for i, token in enumerate(tokens):
             ntokens.append(token)
@@ -195,18 +193,18 @@ def convert_examples_to_features(examples, label_list, max_seq_length, tokenizer
             logger.info("*** Example ***")
             logger.info("guid: %s" % (example.guid))
             logger.info("tokens: %s" % " ".join(
-                    [str(x) for x in tokens]))
+                [str(x) for x in tokens]))
             logger.info("input_ids: %s" % " ".join([str(x) for x in input_ids]))
             logger.info("input_mask: %s" % " ".join([str(x) for x in input_mask]))
             logger.info(
-                    "segment_ids: %s" % " ".join([str(x) for x in segment_ids]))
+                "segment_ids: %s" % " ".join([str(x) for x in segment_ids]))
             # logger.info("label: %s (id = %d)" % (example.label, label_ids))
 
         features.append(
-                InputFeatures(input_ids=input_ids,
-                              input_mask=input_mask,
-                              segment_ids=segment_ids,
-                              label_id=label_ids,
-                              valid_ids=valid,
-                              label_mask=label_mask))
+            InputFeatures(input_ids=input_ids,
+                          input_mask=input_mask,
+                          segment_ids=segment_ids,
+                          label_id=label_ids,
+                          valid_ids=valid,
+                          label_mask=label_mask))
     return features
