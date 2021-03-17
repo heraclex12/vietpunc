@@ -12,9 +12,9 @@ from transformers import (BertTokenizer, BertConfig, ElectraTokenizer, ElectraCo
                           AdamW, get_linear_schedule_with_warmup)
 
 from punc_dataset import *
-from bert import PuncBERTModel, PuncBERTLstmModel, PuncBERTCrfModel, PuncBERTLstmCrfModel
-from electra import PuncElectraModel, PuncElectraLstmModel, PuncElectraLstmCrfModel, PuncElectraCrfModel
-from xlm_roberta import PuncXLMRModel, PuncXLMRLstmModel, PuncXLMRCrfModel, PuncXLMRLstmCrfModel
+from models.bert import PuncBERTModel, PuncBERTLstmModel, PuncBERTCrfModel, PuncBERTLstmCrfModel
+from models.electra import PuncElectraModel, PuncElectraLstmModel, PuncElectraLstmCrfModel, PuncElectraCrfModel
+from models.xlm_roberta import PuncXLMRModel, PuncXLMRLstmModel, PuncXLMRCrfModel, PuncXLMRLstmCrfModel
 import argparse
 import random
 import numpy as np
