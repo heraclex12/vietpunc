@@ -38,7 +38,9 @@ We also include Vietnamese novel and news dataset in this project. Thanks to [th
 
 ### Training
 ```
-python3 run_train_punc.py --bert_model=bert-base-multilingual-cased \
+python3 run_train_punc.py --model_name_or_path=bert-base-multilingual-cased \
+                            --model_arch lstm_crf \
+                            --model_type bert \
                             --data_dir=data/News \ 
                             --output_dir=outputs \ 
                             --task_name=punctuation_prediction \
@@ -46,8 +48,7 @@ python3 run_train_punc.py --bert_model=bert-base-multilingual-cased \
                             --do_train \
                             --do_eval  \ 
                             --eval_on=test \
-                            --train_batch_size=8 \ 
-                            --model_type=punc_bert
+                            --train_batch_size=32
 ```
 
 <!-- CONTACT -->
@@ -62,5 +63,5 @@ Project Link: [https://github.com/heraclex12/VN-Punc-Pretrained-LMs](https://git
 <!-- ACKNOWLEDGEMENTS -->
 ## Acknowledgements
 * [Improving Sequence Tagging for Vietnamese Text Using Transformer-based Neural Models](https://arxiv.org/abs/2006.15994)
-* [PhoBERT: Pretrained language model for Vietnamese](https://github.com/VinAIResearch/PhoBERT)
 * [Unsupervised Cross-lingual Representation Learning at Scale](https://arxiv.org/pdf/1911.02116.pdf)
+* [BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding](https://arxiv.org/abs/1810.04805)
