@@ -154,7 +154,7 @@ def convert_examples_to_features(examples, label_list, max_seq_length, tokenizer
         ntokens = []
         segment_ids = []
         label_ids = []
-        ntokens.append("[CLS]")
+        ntokens.append(tokenizer.cls_token)
         segment_ids.append(0)
         valid.insert(0, 1)
         label_mask.insert(0, 1)
@@ -164,7 +164,7 @@ def convert_examples_to_features(examples, label_list, max_seq_length, tokenizer
             segment_ids.append(0)
             if len(labels) > i:
                 label_ids.append(label_map[labels[i]])
-        ntokens.append("[SEP]")
+        ntokens.append(tokenizer.sep_token)
         segment_ids.append(0)
         valid.append(1)
         label_mask.append(1)

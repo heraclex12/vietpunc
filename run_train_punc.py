@@ -7,19 +7,30 @@ from torch.utils.data import (DataLoader, RandomSampler, SequentialSampler,
 from torch.utils.data.distributed import DistributedSampler
 import torch.nn.functional as F
 from tqdm import tqdm, trange
-from transformers import (BertTokenizer, BertConfig,
+from transformers import (BertTokenizer, BertConfig, ElectraTokenizer, ElectraConfig,
+                          XLMRobertaTokenizer, XLMRobertaConfig,
                           AdamW, get_linear_schedule_with_warmup)
 
 from punc_dataset import *
-from bert import PuncBERTModel
-from bert_crf import PuncBERTCrfModel
-from bert_lstm import PuncBERTLstmModel
-from bert_lstm_crf import PuncBERTLstmCrfModel
+from bert import PuncBERTModel, PuncBERTLstmModel, PuncBERTCrfModel, PuncBERTLstmCrfModel
+from electra import PuncElectraModel, PuncElectraLstmModel, PuncElectraLstmCrfModel, PuncElectraCrfModel
+from xlm_roberta import PuncXLMRModel, PuncXLMRLstmModel, PuncXLMRCrfModel, PuncXLMRLstmCrfModel
+import argparse
+import random
+import numpy as np
+import json
+import pickle
 
 logging.basicConfig(format='%(asctime)s - %(levelname)s - %(name)s -   %(message)s',
                     datefmt='%m/%d/%Y %H:%M:%S',
                     level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+MODEL_CLASSES = {
+    'bert': (BertConfig, BertTokenizer),
+    'electra': (ElectraConfig, ElectraTokenizer),
+    'xlmr': (XLMRobertaConfig, XLMRobertaTokenizer)
+}
 
 
 def main():
@@ -31,12 +42,14 @@ def main():
                         type=str,
                         required=True,
                         help="The input data dir. Should contain the .csv files (or other data files) for the task.")
-    parser.add_argument("--bert_model", default=None, type=str, required=True,
-                        help="Bert pre-trained model selected in the list: bert-base-multilingual-uncased, "
-                             "bert-base-multilingual-cased.")
+    parser.add_argument("--model_name_or_path", default=None, type=str, required=True,
+                        help="Pre-trained model selected in the list: bert-base-multilingual-uncased, "
+                             "bert-base-multilingual-cased...")
     parser.add_argument("--model_type", default=None, type=str, required=True,
-                        help="Punctuation prediction model type selected in the list: punc_bert, punc_bert_crf,"
-                             "punc_bert_lstm, punc_bert_lstm_crf.")
+                        help="Pre-trained model type selected in the list: electra, bert, xlmr.")
+    parser.add_argument("--model_arch", default=None, type=str, required=True,
+                        help="Punctuation prediction model architecture selected in the list: original, crf,"
+                             "lstm, lstm_crf.")
     parser.add_argument("--task_name",
                         default=None,
                         type=str,
@@ -168,8 +181,48 @@ def main():
     label_list = processor.get_labels()
     num_labels = len(label_list) + 1
 
-    tokenizer = BertTokenizer.from_pretrained(args.bert_model, do_lower_case=args.do_lower_case)
-    tokenizer.add_special_tokens({'additional_special_tokens': special_tokens})
+    # Prepare model
+    config_class, tokenizer_class = MODEL_CLASSES[args.model_type]
+    tokenizer = tokenizer_class.from_pretrained(args.model_name_or_path, do_lower_case=args.do_lower_case)
+    tokenizer.add_tokens(special_tokens)
+    config = config_class.from_pretrained(args.model_name_or_path, num_labels=num_labels,
+                                          finetuning_task=args.task_name)
+    model_class = None
+    if args.model_type == 'bert':
+        if args.model_arch == 'crf':
+            model_class = PuncBERTCrfModel
+        elif args.model_arch == 'lstm':
+            model_class = PuncBERTLstmModel
+        elif args.model_arch == 'lstm_crf':
+            model_class = PuncBERTLstmCrfModel
+        else:
+            model_class = PuncBERTModel
+
+    elif args.model_type == 'electra':
+        if args.model_arch == 'crf':
+            model_class = PuncElectraCrfModel
+        elif args.model_arch == 'lstm':
+            model_class = PuncElectraLstmModel
+        elif args.model_arch == 'lstm_crf':
+            model_class = PuncElectraLstmCrfModel
+        else:
+            model_class = PuncElectraModel
+
+    elif args.model_type == 'xlmr':
+        if args.model_arch == 'crf':
+            model_class = PuncXLMRCrfModel
+        elif args.model_arch == 'lstm':
+            model_class = PuncXLMRLstmModel
+        elif args.model_arch == 'lstm_crf':
+            model_class = PuncXLMRLstmCrfModel
+        else:
+            model_class = PuncXLMRModel
+
+    model = model_class.from_pretrained(args.model_name_or_path,
+                                        from_tf=False,
+                                        config=config)
+    model.resize_token_embeddings(len(tokenizer))
+    model.to(device)
 
     train_examples = None
     num_train_optimization_steps = 0
@@ -183,26 +236,8 @@ def main():
     if args.local_rank not in [-1, 0]:
         torch.distributed.barrier()  # Make sure only the first process in distributed training will download model & vocab
 
-    # Prepare model
-    config = BertConfig.from_pretrained(args.bert_model, num_labels=num_labels, finetuning_task=args.task_name)
-    if args.model_type == 'punc_crf':
-        PunctuationPredictionModel = PuncBERTCrfModel
-    elif args.model_type == 'punc_lstm':
-        PunctuationPredictionModel = PuncBERTLstmModel
-    elif args.model_type == 'punc_lstm_crf':
-        PunctuationPredictionModel = PuncBERTLstmCrfModel
-    else:
-        PunctuationPredictionModel = PuncBERTModel
-
-    model = PunctuationPredictionModel.from_pretrained(args.bert_model,
-                                                       from_tf=False,
-                                                       config=config)
-    model.resize_token_embeddings(len(tokenizer))
-
     if args.local_rank == 0:
         torch.distributed.barrier()  # Make sure only the first process in distributed training will download model & vocab
-
-    model.to(device)
 
     param_optimizer = list(model.named_parameters())
     no_decay = ['bias', 'LayerNorm.weight']
@@ -235,6 +270,17 @@ def main():
     nb_tr_steps = 0
     tr_loss = 0
     label_map = {i: label for i, label in enumerate(label_list, 1)}
+
+    start_epoch = 0
+    PATH = os.path.join(args.output_dir, 'checkpoint.ckt')
+    # Load checkpoint
+    if os.path.exists(PATH):
+        checkpoint = torch.load(PATH)
+        model.load_state_dict(checkpoint['model_state_dict'])
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        start_epoch = int(checkpoint['epoch']) + 1
+        scheduler.load_state_dict(checkpoint['scheduler'])
+
     if args.do_train:
         train_features = convert_examples_to_features(
             train_examples, label_list, args.max_seq_length, tokenizer)
@@ -256,9 +302,10 @@ def main():
             train_sampler = DistributedSampler(train_data)
         train_dataloader = DataLoader(train_data, sampler=train_sampler, batch_size=args.train_batch_size)
 
-        model.train()
-        for _ in trange(int(args.num_train_epochs), desc="Epoch"):
+        for epoch in range(int(start_epoch), int(args.num_train_epochs)):
+            logger.info(f"Epoch {epoch + 1}/{args.num_train_epochs}")
             tr_loss = 0
+            model.train()
             nb_tr_examples, nb_tr_steps = 0, 0
             for step, batch in enumerate(tqdm(train_dataloader, desc="Iteration")):
                 batch = tuple(t.to(device) for t in batch)
@@ -286,20 +333,28 @@ def main():
                     model.zero_grad()
                     global_step += 1
 
+                # Save a checkpoint
+                torch.save({
+                    'epoch': epoch,
+                    'model_state_dict': model.state_dict(),
+                    'optimizer_state_dict': optimizer.state_dict(),
+                    'scheduler': scheduler.state_dict(),
+                }, PATH)
+
         # Save a trained model and the associated configuration
         model_to_save = model.module if hasattr(model, 'module') else model  # Only save the model it-self
         model_to_save.save_pretrained(args.output_dir)
         tokenizer.save_pretrained(args.output_dir)
         label_map = {i: label for i, label in enumerate(label_list, 1)}
-        model_config = {"bert_model": args.bert_model, "do_lower": args.do_lower_case,
+        model_config = {"model_name_or_path": args.model_name_or_path, "do_lower": args.do_lower_case,
                         "max_seq_length": args.max_seq_length, "num_labels": len(label_list) + 1,
                         "label_map": label_map}
         json.dump(model_config, open(os.path.join(args.output_dir, "model_config.json"), "w"))
         # Load a trained model and config that you have fine-tuned
     else:
         # Load a trained model and vocabulary that you have fine-tuned
-        model = PunctuationPredictionModel.from_pretrained(args.output_dir)
-        tokenizer = BertTokenizer.from_pretrained(args.output_dir, do_lower_case=args.do_lower_case)
+        model = model_class.from_pretrained(args.output_dir)
+        tokenizer = tokenizer_class.from_pretrained(args.output_dir, do_lower_case=args.do_lower_case)
 
     model.to(device)
 
@@ -341,10 +396,10 @@ def main():
             l_mask = l_mask.to(device)
 
             with torch.no_grad():
-                sequence_tags = model(input_ids, segment_ids, input_mask, valid_ids=valid_ids,
-                                      attention_mask_label=l_mask)
+                logits = model(input_ids, segment_ids, input_mask, valid_ids=valid_ids,
+                               attention_mask_label=l_mask)
 
-            if not args.model_type.endswith('crf'):
+            if not args.model_arch.endswith('crf'):
                 logits = torch.argmax(F.log_softmax(logits, dim=2), dim=2)
                 logits = logits.detach().cpu().numpy()
 
@@ -363,7 +418,7 @@ def main():
                         break
                     else:
                         temp_1.append(label_map[label_ids[i][j]])
-                        temp_2.append(label_map.get(sequence_tags[i][j], 'PAD'))
+                        temp_2.append(label_map.get(logits[i][j], 'PAD'))
 
         punc_marks = ['PERIOD', 'COMMA', 'COLON', 'QMARK', 'EXCLAM', 'SEMICOLON']
         report = classification_report(y_true, y_pred, digits=4, labels=punc_marks)
