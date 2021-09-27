@@ -59,6 +59,27 @@ Hieu Tran - heraclex12@gmail.com
 Project Link: [https://github.com/heraclex12/VN-Punc-Pretrained-LMs](https://github.com/heraclex12/VN-Punc-Pretrained-LMs)
 
 
+## Citation
+```
+@InProceedings{10.1007/978-3-030-79463-7_5,
+      author="Tran, Hieu
+      and Dinh, Cuong V.
+      and Pham, Quang
+      and Nguyen, Binh T.",
+      editor="Fujita, Hamido
+      and Selamat, Ali
+      and Lin, Jerry Chun-Wei
+      and Ali, Moonis",
+      title="An Efficient Transformer-Based Model for Vietnamese Punctuation Prediction",
+      booktitle="Advances and Trends in Artificial Intelligence. From Theory to Practice",
+      year="2021",
+      publisher="Springer International Publishing",
+      address="Cham",
+      pages="47--58",
+      isbn="978-3-030-79463-7"
+}
+```
+
 
 <!-- ACKNOWLEDGEMENTS -->
 ## Acknowledgements
