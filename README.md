@@ -23,9 +23,9 @@ We also stack a LSTM layer and CRF layer on the top of output representations. T
 ### Prerequisites
 
 To reproduce the experiments of our model, please install the `requirements.txt` according to the following instructions:
-* huggingface transformer
-* pytorch
-* python3
+* transformers==4.16.2
+* pytorch==1.10.0
+* python==3.7
 ```sh
 pip install -r requirements.txt
 ```
