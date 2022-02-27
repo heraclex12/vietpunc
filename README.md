@@ -22,7 +22,7 @@ We also stack a LSTM layer and CRF layer on the top of output representations. T
 
 ### Prerequisites
 
-To reproduce the experiment of our model, please install the requirements.txt according to the following instructions:
+To reproduce the experiments of our model, please install the `requirements.txt` according to the following instructions:
 * huggingface transformer
 * pytorch
 * python3
@@ -32,7 +32,7 @@ pip install -r requirements.txt
 
 ### Data
 
-We also include Vietnamese novel and news dataset in this project. Thanks to [this work](https://github.com/BinhMisfit/vietnamese-punctuation-prediction) for providing this datasets.
+We also include Vietnamese novel and news dataset in this project. Thanks to [this work](https://github.com/BinhMisfit/vietnamese-punctuation-prediction) for providing these datasets.
 
 ## Instructions
 
