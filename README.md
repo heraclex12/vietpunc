@@ -16,7 +16,7 @@
 
 <!-- ABOUT THE PROJECT -->
 ## About The Project
-In this project, we utilize the effectiveness of the different pre-trained language models such as vELECTRA, vBERT, XLM-RoBERTa to restore seven punctuation marks in Vietnamese datasets.
+In this project, we utilize the effectiveness of the different pre-trained language models such as viELECTRA, viBERT, XLM-RoBERTa to restore seven common punctuation marks in Vietnamese.
 
 We also stack a LSTM layer and CRF layer on the top of output representations. This contributions achieve a significant improvement over the previous models.
 
