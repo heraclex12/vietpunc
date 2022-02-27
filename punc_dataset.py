@@ -3,7 +3,7 @@ from __future__ import absolute_import, division, print_function
 import logging
 import os
 import re
-
+import random
 import pandas as pd
 
 logging.basicConfig(format='%(asctime)s - %(levelname)s - %(name)s -   %(message)s',
@@ -67,6 +67,18 @@ def readfile(filename, eos_marks=['PERIOD', 'QMARK', 'EXCLAM']):
         idx = end_idx
     return list(zip(paragraphs, token_labels))
 
+  
+s1 = u'ÀÁÂÃÈÉÊÌÍÒÓÔÕÙÚÝàáâãèéêìíòóôõùúýĂăĐđĨĩŨũƠơƯưẠạẢảẤấẦầẨẩẪẫẬậẮắẰằẲẳẴẵẶặẸẹẺẻẼẽẾếỀềỂểỄễỆệỈỉỊịỌọỎỏỐốỒồỔổỖỗỘộỚớỜờỞởỠỡỢợỤụỦủỨứỪừỬửỮữỰựỲỳỴỵỶỷỸỹ'
+s0 = u'AAAAEEEIIOOOOUUYaaaaeeeiioooouuyAaDdIiUuOoUuAaAaAaAaAaAaAaAaAaAaAaAaEeEeEeEeEeEeEeEeIiIiOoOoOoOoOoOoOoOoOoOoOoOoUuUuUuUuUuUuUuYyYyYyYy'
+def remove_accents(input_str):
+	s = ''
+	for c in input_str:
+		if c in s1:
+			s += s0[s1.index(c)]
+		else:
+			s += c
+	return s
+
 
 class DataProcessor(object):
     """Base class for data converters for sequence classification data sets."""
@@ -120,9 +132,9 @@ class PuncProcessor(DataProcessor):
         return examples
 
 
-def convert_examples_to_features(examples, label_list, max_seq_length, tokenizer):
+def convert_examples_to_features(examples, label_list, max_seq_length, tokenizer, noise_prob = 0.15):
     """Loads a data file into a list of `InputBatch`s."""
-
+    
     label_map = {label: i for i, label in enumerate(label_list, 1)}
 
     features = []
@@ -133,9 +145,15 @@ def convert_examples_to_features(examples, label_list, max_seq_length, tokenizer
         labels = []
         valid = []
         label_mask = []
+        num_to_noise = noise_prob * len(textlist)
+        count_noise = 0
         for i, word in enumerate(textlist):
             if re.search(r'([+-]?\d+[\.,]?)+', word) is not None or word.isnumeric():
                 word = '<NUM>'
+            
+            if random.random() < noise_prob and count_noise < num_to_noise:
+              word = remove_accents(word)
+              count_noise += 1
             token = tokenizer.tokenize(word)
             tokens.extend(token)
             label_1 = labellist[i]
