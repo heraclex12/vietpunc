@@ -148,9 +148,6 @@ def convert_examples_to_features(examples, label_list, max_seq_length, tokenizer
         num_to_noise = noise_prob * len(textlist)
         count_noise = 0
         for i, word in enumerate(textlist):
-            if re.search(r'([+-]?\d+[\.,]?)+', word) is not None or word.isnumeric():
-                word = '<NUM>'
-            
             if random.random() < noise_prob and count_noise < num_to_noise:
               word = remove_accents(word)
               count_noise += 1
