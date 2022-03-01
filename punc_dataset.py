@@ -132,7 +132,7 @@ class PuncProcessor(DataProcessor):
         return examples
 
 
-def convert_examples_to_features(examples, label_list, max_seq_length, tokenizer, noise_prob = 0.15):
+def convert_examples_to_features(examples, label_list, max_seq_length, tokenizer, noise_prob = 0.15, mode = 'eval'):
     """Loads a data file into a list of `InputBatch`s."""
     
     label_map = {label: i for i, label in enumerate(label_list, 1)}
@@ -148,7 +148,7 @@ def convert_examples_to_features(examples, label_list, max_seq_length, tokenizer
         num_to_noise = noise_prob * len(textlist)
         count_noise = 0
         for i, word in enumerate(textlist):
-            if random.random() < noise_prob and count_noise < num_to_noise:
+            if random.random() < noise_prob and count_noise < num_to_noise and mode == 'train':
               word = remove_accents(word)
               count_noise += 1
             token = tokenizer.tokenize(word)
