@@ -51,15 +51,20 @@ def readfile(filename, eos_marks=['PERIOD', 'QMARK', 'EXCLAM']):
     n_tokens = len(df)
     paragraphs = []
     token_labels = []
-    while n_tokens > idx >= 0:
-        sub_df = df.iloc[idx: min(idx + 128, n_tokens)]
-        end_idx = sub_df[sub_df.label.isin(eos_marks)].tail(1).index
-        if end_idx.empty:
-            end_idx = -1
-            paragraph_df = df.iloc[idx:]
-        else:
-            end_idx = end_idx.item() + 1
-            paragraph_df = df.iloc[idx: end_idx]
+    while idx < n_tokens and idx >= 0:
+    	step = 128
+    	sub_df = df.iloc[idx: min(idx+step, n_tokens)]
+    	end_idx = sub_df[sub_df.label.isin(eos_marks)].tail(1).index
+    	while end_idx.empty:
+      		step += 128
+      		sub_df = df.iloc[idx: min(idx+step, n_tokens)]
+      		end_idx = sub_df[sub_df.label.isin(eos_marks)].tail(1).index
+
+    	if step > 256:
+      		end_idx = idx + 256
+    	else:
+      		end_idx = end_idx.item() + 1
+    	paragraph_df = df.iloc[idx: end_idx]
 
         # numeric_labels = paragraph_df.label.apply(lambda l: punctuation_marks.index(l))
         paragraphs.append(paragraph_df.token.values.tolist())
@@ -132,13 +137,15 @@ class PuncProcessor(DataProcessor):
         return examples
 
 
-def convert_examples_to_features(examples, label_list, max_seq_length, tokenizer, noise_prob = 0.15, mode = 'eval'):
+def convert_examples_to_features(examples, label_list, max_seq_length, tokenizer, noise_prob = 0.3, mode = 'eval', add_noise=True):
     """Loads a data file into a list of `InputBatch`s."""
-    
-    label_map = {label: i for i, label in enumerate(label_list, 1)}
+
+    label_map = {label : i for i, label in enumerate(label_list,1)}
 
     features = []
-    for (ex_index, example) in enumerate(examples):
+    loop_times = [0, 1] if mode == 'train' else [0]
+    for (ex_index,example) in enumerate(examples):
+      for t in loop_times:
         textlist = example.text_a.split(' ')
         labellist = example.label
         tokens = []
@@ -148,9 +155,10 @@ def convert_examples_to_features(examples, label_list, max_seq_length, tokenizer
         num_to_noise = noise_prob * len(textlist)
         count_noise = 0
         for i, word in enumerate(textlist):
-            if random.random() < noise_prob and count_noise < num_to_noise and mode == 'train':
-              word = remove_accents(word)
-              count_noise += 1
+            if add_noise and t == 1:
+              if random.random() < noise_prob and count_noise < num_to_noise:
+                word = remove_accents(word)
+                count_noise += 1
             token = tokenizer.tokenize(word)
             tokens.extend(token)
             label_1 = labellist[i]
@@ -169,17 +177,17 @@ def convert_examples_to_features(examples, label_list, max_seq_length, tokenizer
         ntokens = []
         segment_ids = []
         label_ids = []
-        ntokens.append(tokenizer.cls_token)
+        ntokens.append("[CLS]")
         segment_ids.append(0)
-        valid.insert(0, 1)
-        label_mask.insert(0, 1)
+        valid.insert(0,1)
+        label_mask.insert(0,1)
         label_ids.append(label_map["[CLS]"])
         for i, token in enumerate(tokens):
             ntokens.append(token)
             segment_ids.append(0)
             if len(labels) > i:
                 label_ids.append(label_map[labels[i]])
-        ntokens.append(tokenizer.sep_token)
+        ntokens.append("[SEP]")
         segment_ids.append(0)
         valid.append(1)
         label_mask.append(1)
@@ -208,18 +216,18 @@ def convert_examples_to_features(examples, label_list, max_seq_length, tokenizer
             logger.info("*** Example ***")
             logger.info("guid: %s" % (example.guid))
             logger.info("tokens: %s" % " ".join(
-                [str(x) for x in tokens]))
+                    [str(x) for x in tokens]))
             logger.info("input_ids: %s" % " ".join([str(x) for x in input_ids]))
             logger.info("input_mask: %s" % " ".join([str(x) for x in input_mask]))
             logger.info(
-                "segment_ids: %s" % " ".join([str(x) for x in segment_ids]))
+                    "segment_ids: %s" % " ".join([str(x) for x in segment_ids]))
             # logger.info("label: %s (id = %d)" % (example.label, label_ids))
 
         features.append(
-            InputFeatures(input_ids=input_ids,
-                          input_mask=input_mask,
-                          segment_ids=segment_ids,
-                          label_id=label_ids,
-                          valid_ids=valid,
-                          label_mask=label_mask))
+                InputFeatures(input_ids=input_ids,
+                              input_mask=input_mask,
+                              segment_ids=segment_ids,
+                              label_id=label_ids,
+                              valid_ids=valid,
+                              label_mask=label_mask))
     return features
