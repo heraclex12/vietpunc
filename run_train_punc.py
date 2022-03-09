@@ -92,6 +92,9 @@ def main():
                         default=8,
                         type=int,
                         help="Total batch size for eval.")
+    parser.add_argument("--eval_every_epoch",
+                        action='store_true',
+                        help="Whether to evaluate model on each epoch.")
     parser.add_argument("--learning_rate",
                         default=5e-5,
                         type=float,
@@ -137,6 +140,9 @@ def main():
                         help="Loss scaling to improve fp16 numeric stability. Only used when fp16 set to True.\n"
                              "0 (default value): dynamic loss scaling.\n"
                              "Positive power of 2: static loss scaling value.\n")
+    parser.add_argument("--noise_prob", default=0.15, type=float,
+                        help="Probability of tokens to remove accents.")
+    
     args = parser.parse_args()
     special_tokens = ['<NUM>', '<URL>', '<EMAIL>']
 
@@ -279,11 +285,12 @@ def main():
         model.load_state_dict(checkpoint['model_state_dict'])
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         start_epoch = int(checkpoint['epoch']) + 1
+        tr_loss = checkpoint['loss']
         scheduler.load_state_dict(checkpoint['scheduler'])
 
     if args.do_train:
         train_features = convert_examples_to_features(
-            train_examples, label_list, args.max_seq_length, tokenizer)
+            train_examples, label_list, args.max_seq_length, tokenizer, noise_prob=args.noise_prob, mode='train')
         logger.info("***** Running training *****")
         logger.info("  Num examples = %d", len(train_examples))
         logger.info("  Batch size = %d", args.train_batch_size)
@@ -338,8 +345,78 @@ def main():
                     'epoch': epoch,
                     'model_state_dict': model.state_dict(),
                     'optimizer_state_dict': optimizer.state_dict(),
+                    'loss': tr_loss,
                     'scheduler': scheduler.state_dict(),
                 }, PATH)
+                
+                if args.do_eval and args.eval_every_epoch and (args.local_rank == -1 or torch.distributed.get_rank() == 0):
+                    if args.eval_on == "dev":
+                        eval_examples = processor.get_dev_examples(args.data_dir)
+                    elif args.eval_on == "test":
+                        eval_examples = processor.get_test_examples(args.data_dir)
+                    else:
+                        raise ValueError("eval on dev or test set only")
+                    eval_features = convert_examples_to_features(eval_examples, label_list, args.max_seq_length, tokenizer, mode='eval')
+                    logger.info("***** Running evaluation *****")
+                    logger.info("  Num examples = %d", len(eval_examples))
+                    logger.info("  Batch size = %d", args.eval_batch_size)
+                    all_input_ids = torch.tensor([f.input_ids for f in eval_features], dtype=torch.long)
+                    all_input_mask = torch.tensor([f.input_mask for f in eval_features], dtype=torch.long)
+                    all_segment_ids = torch.tensor([f.segment_ids for f in eval_features], dtype=torch.long)
+                    all_label_ids = torch.tensor([f.label_id for f in eval_features], dtype=torch.long)
+                    all_valid_ids = torch.tensor([f.valid_ids for f in eval_features], dtype=torch.long)
+                    all_lmask_ids = torch.tensor([f.label_mask for f in eval_features], dtype=torch.long)
+                    eval_data = TensorDataset(all_input_ids, all_input_mask, all_segment_ids, all_label_ids,all_valid_ids,all_lmask_ids)
+                    # Run prediction for full data
+                    eval_sampler = SequentialSampler(eval_data)
+                    eval_dataloader = DataLoader(eval_data, sampler=eval_sampler, batch_size=args.eval_batch_size)
+                    model.eval()
+                    eval_loss, eval_accuracy = 0, 0
+                    nb_eval_steps, nb_eval_examples = 0, 0
+                    y_true = []
+                    y_pred = []
+                    label_map = {i : label for i, label in enumerate(label_list,1)}
+                    for input_ids, input_mask, segment_ids, label_ids,valid_ids,l_mask in eval_dataloader:
+                        input_ids = input_ids.to(device)
+                        input_mask = input_mask.to(device)
+                        segment_ids = segment_ids.to(device)
+                        valid_ids = valid_ids.to(device)
+                        label_ids = label_ids.to(device)
+                        l_mask = l_mask.to(device)
+
+                        with torch.no_grad():
+                            logits = model(input_ids, segment_ids, input_mask, valid_ids=valid_ids,
+                               attention_mask_label=l_mask)
+
+                        if not args.model_arch.endswith('crf'):
+                            logits = torch.argmax(F.log_softmax(logits, dim=2), dim=2)
+                            logits = logits.detach().cpu().numpy()
+                        
+                        label_ids = label_ids.to('cpu').numpy()
+                        input_mask = input_mask.to('cpu').numpy()
+
+                        for i, label in enumerate(label_ids):
+                            temp_1 = []
+                            temp_2 = []
+                            for j,m in enumerate(label):
+                                if j == 0:
+                                    continue
+                                elif label_ids[i][j] == len(label_map):
+                                    y_true.extend(temp_1)
+                                    y_pred.extend(temp_2)
+                                    break
+                                else:
+                                    temp_1.append(label_map[label_ids[i][j]])
+                                    temp_2.append(label_map.get(logits[i][j], 'PAD'))
+
+                    punc_marks = ['PERIOD', 'COMMA', 'COLON', 'QMARK', 'EXCLAM', 'SEMICOLON']
+                    report = classification_report(y_true, y_pred, digits=4, labels=punc_marks)
+                    output_eval_file = os.path.join(args.output_dir, "eval_results.txt")
+
+                    with open(output_eval_file, "w") as writer:
+                        logger.info("***** Eval results *****")
+                        logger.info("\n%s", report)
+                        writer.write(report)
 
         # Save a trained model and the associated configuration
         model_to_save = model.module if hasattr(model, 'module') else model  # Only save the model it-self
@@ -365,7 +442,7 @@ def main():
             eval_examples = processor.get_test_examples(args.data_dir)
         else:
             raise ValueError("eval on dev or test set only")
-        eval_features = convert_examples_to_features(eval_examples, label_list, args.max_seq_length, tokenizer)
+        eval_features = convert_examples_to_features(eval_examples, label_list, args.max_seq_length, tokenizer, mode='eval')
         logger.info("***** Running evaluation *****")
         logger.info("  Num examples = %d", len(eval_examples))
         logger.info("  Batch size = %d", args.eval_batch_size)
@@ -422,11 +499,10 @@ def main():
 
         punc_marks = ['PERIOD', 'COMMA', 'COLON', 'QMARK', 'EXCLAM', 'SEMICOLON']
         report = classification_report(y_true, y_pred, digits=4, labels=punc_marks)
-        logger.info("\n%s", report)
-        output_eval_file = os.path.join(args.output_dir, "eval_results.txt")
+        output_test_file = os.path.join(args.output_dir, "test_results.txt")
 
-        with open(output_eval_file, "w") as writer:
-            logger.info("***** Eval results *****")
+        with open(output_test_file, "w") as writer:
+            logger.info("***** Test results *****")
             logger.info("\n%s", report)
             writer.write(report)
 
