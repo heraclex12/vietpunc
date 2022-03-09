@@ -52,24 +52,24 @@ def readfile(filename, eos_marks=['PERIOD', 'QMARK', 'EXCLAM']):
     paragraphs = []
     token_labels = []
     while idx < n_tokens and idx >= 0:
-    	step = 128
-    	sub_df = df.iloc[idx: min(idx+step, n_tokens)]
-    	end_idx = sub_df[sub_df.label.isin(eos_marks)].tail(1).index
-    	while end_idx.empty:
-      		step += 128
-      		sub_df = df.iloc[idx: min(idx+step, n_tokens)]
-      		end_idx = sub_df[sub_df.label.isin(eos_marks)].tail(1).index
+      step = 128
+      sub_df = df.iloc[idx: min(idx+step, n_tokens)]
+      end_idx = sub_df[sub_df.label.isin(eos_marks)].tail(1).index
+      while end_idx.empty:
+        step += 128
+        sub_df = df.iloc[idx: min(idx+step, n_tokens)]
+        end_idx = sub_df[sub_df.label.isin(eos_marks)].tail(1).index
 
-    	if step > 256:
-      		end_idx = idx + 256
-    	else:
-      		end_idx = end_idx.item() + 1
-    	paragraph_df = df.iloc[idx: end_idx]
+      if step > 256:
+        end_idx = idx + 256
+      else:
+        end_idx = end_idx.item() + 1
+      paragraph_df = df.iloc[idx: end_idx]
 
-        # numeric_labels = paragraph_df.label.apply(lambda l: punctuation_marks.index(l))
-        paragraphs.append(paragraph_df.token.values.tolist())
-        token_labels.append(paragraph_df.label.values.tolist())
-        idx = end_idx
+      paragraphs.append(paragraph_df.token.values.tolist())
+      token_labels.append(paragraph_df.label.values.tolist())
+      idx = end_idx
+      
     return list(zip(paragraphs, token_labels))
 
   
