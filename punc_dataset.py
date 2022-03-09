@@ -140,7 +140,7 @@ class PuncProcessor(DataProcessor):
 def convert_examples_to_features(examples, label_list, max_seq_length, tokenizer, noise_prob = 0.3, mode = 'eval', add_noise=True):
     """Loads a data file into a list of `InputBatch`s."""
 
-    label_map = {label : i for i, label in enumerate(label_list,1)}
+    label_map = {label : i for i, label in enumerate(label_list, 1)}
 
     features = []
     loop_times = [0, 1] if mode == 'train' else [0]
@@ -177,21 +177,21 @@ def convert_examples_to_features(examples, label_list, max_seq_length, tokenizer
         ntokens = []
         segment_ids = []
         label_ids = []
-        ntokens.append("[CLS]")
+        ntokens.append(tokenizer.cls_token)
         segment_ids.append(0)
-        valid.insert(0,1)
-        label_mask.insert(0,1)
-        label_ids.append(label_map["[CLS]"])
+        valid.insert(0, 1)
+        label_mask.insert(0, 1)
+        label_ids.append(label_map[tokenizer.cls_token])
         for i, token in enumerate(tokens):
             ntokens.append(token)
             segment_ids.append(0)
             if len(labels) > i:
                 label_ids.append(label_map[labels[i]])
-        ntokens.append("[SEP]")
+        ntokens.append(tokenizer.sep_token)
         segment_ids.append(0)
         valid.append(1)
         label_mask.append(1)
-        label_ids.append(label_map["[SEP]"])
+        label_ids.append(label_map[tokenizer.sep_token])
         input_ids = tokenizer.convert_tokens_to_ids(ntokens)
         input_mask = [1] * len(input_ids)
         label_mask = [1] * len(label_ids)
