@@ -53,7 +53,7 @@ from transformers.utils.versions import require_version
 
 logger = logging.getLogger(__name__)
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
-check_min_version("4.19.0.dev0")
+check_min_version("4.18.0")
 
 require_version("datasets>=1.8.0", "To fix: pip install -r examples/pytorch/token-classification/requirements.txt")
 
@@ -442,13 +442,9 @@ def main():
         label_list.sort()
         return label_list
 
-    if isinstance(features[label_column_name].feature, ClassLabel):
-        label_list = features[label_column_name].feature.names
-        # No need to convert the labels since they are already ints.
-        label_to_id = {i: i for i in range(len(label_list))}
-    else:
-        label_list = get_label_list(raw_datasets["train"][label_column_name])
-        label_to_id = {l: i for i, l in enumerate(label_list)}
+
+    label_list = get_label_list(raw_datasets["train"][label_column_name])
+    label_to_id = {l: i for i, l in enumerate(label_list)}
     num_labels = len(label_list)
 
     # Load pretrained model and tokenizer
@@ -615,7 +611,7 @@ def main():
 
     p_eval_step = jax.pmap(eval_step, axis_name="batch")
 
-    metric = load_metric("seqeval")
+    metric = load_metric("f1")
 
     def get_labels(y_pred, y_true):
         # Transform predictions and references tensos to numpy arrays
@@ -645,10 +641,7 @@ def main():
             return final_results
         else:
             return {
-                "precision": results["overall_precision"],
-                "recall": results["overall_recall"],
-                "f1": results["overall_f1"],
-                "accuracy": results["overall_accuracy"],
+                "f1": results["f1"],
             }
 
     logger.info(f"===== Starting training ({num_epochs} epochs) =====")
