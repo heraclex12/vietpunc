@@ -715,7 +715,7 @@ def main():
                     eval_preds.extend(preds)
                     eval_refs.extend(refs)
 
-                eval_metrics = compute_metrics([**preds for preds in eval_preds], [**refs for refs in eval_refs])
+                eval_metrics = compute_metrics([item for preds in eval_preds for item in preds], [item for refs in eval_refs for item in refs])
                 if data_args.return_entity_level_metrics:
                     logger.info(f"Step... ({cur_step}/{total_steps} | Validation metrics: {eval_metrics}")
                 else:
@@ -768,7 +768,7 @@ def main():
             eval_preds.extend(preds)
             eval_refs.extend(refs)
 
-        eval_metrics = compute_metrics([**preds for preds in eval_preds], [**refs for refs in eval_refs])
+        eval_metrics = compute_metrics([item for preds in eval_preds for item in preds], [item for refs in eval_refs for item in refs])
 
         if jax.process_index() == 0:
             eval_metrics = {f"eval_{metric_name}": value for metric_name, value in eval_metrics.items()}
