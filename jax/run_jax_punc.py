@@ -30,7 +30,7 @@ import datasets
 import numpy as np
 from datasets import ClassLabel, load_dataset, load_metric
 from tqdm import tqdm
-
+from sklearn.metrics import classification_report
 import jax
 import jax.numpy as jnp
 import optax
@@ -627,22 +627,10 @@ def main():
         ]
         return true_predictions, true_labels
 
-    def compute_metrics():
-        results = metric.compute()
-        if data_args.return_entity_level_metrics:
-            # Unpack nested dictionaries
-            final_results = {}
-            for key, value in results.items():
-                if isinstance(value, dict):
-                    for n, v in value.items():
-                        final_results[f"{key}_{n}"] = v
-                else:
-                    final_results[key] = value
-            return final_results
-        else:
-            return {
-                "f1": results["f1"],
-            }
+    def compute_metrics(preds, refs):
+      punc_marks = ['PERIOD', 'COMMA', 'COLON', 'QMARK', 'EXCLAM', 'SEMICOLON']
+      report = classification_report(refs[0], preds[0], digits=4, labels=punc_marks)
+      return report
 
     logger.info(f"===== Starting training ({num_epochs} epochs) =====")
     train_time = 0
@@ -692,6 +680,8 @@ def main():
             if cur_step % training_args.eval_steps == 0 and cur_step > 0:
 
                 eval_metrics = {}
+                eval_preds = []
+                eval_refs = []
                 # evaluate
                 for batch in tqdm(
                     eval_data_collator(eval_dataset, eval_batch_size),
@@ -705,10 +695,8 @@ def main():
                     labels = np.array([label for label in chain(*labels)])
                     labels[np.array(chain(*batch["attention_mask"])) == 0] = -100
                     preds, refs = get_labels(predictions, labels)
-                    metric.add_batch(
-                        predictions=preds,
-                        references=refs,
-                    )
+                    eval_preds.extend(preds)
+                    eval_refs.extend(refs)
 
                 # evaluate also on leftover examples (not divisible by batch_size)
                 num_leftover_samples = len(eval_dataset) % eval_batch_size
@@ -724,13 +712,12 @@ def main():
                     labels = np.array(labels)
                     labels[np.array(batch["attention_mask"]) == 0] = -100
                     preds, refs = get_labels(predictions, labels)
-                    metric.add_batch(
-                        predictions=preds,
-                        references=refs,
-                    )
+                    eval_preds.extend(preds)
+                    eval_refs.extend(refs)
 
-                eval_metrics = compute_metrics()
-
+                eval_metrics = compute_metrics(eval_preds, eval_refs)
+                print('preds', len(eval_preds[0]))
+                print('refs', len(eval_refs[0]))
                 if data_args.return_entity_level_metrics:
                     logger.info(f"Step... ({cur_step}/{total_steps} | Validation metrics: {eval_metrics}")
                 else:
@@ -738,8 +725,8 @@ def main():
                         f"Step... ({cur_step}/{total_steps} | Validation f1: {eval_metrics['f1']}, Validation Acc: {eval_metrics['accuracy']})"
                     )
 
-                if has_tensorboard and jax.process_index() == 0:
-                    write_eval_metric(summary_writer, eval_metrics, cur_step)
+                # if has_tensorboard and jax.process_index() == 0:
+                #     write_eval_metric(summary_writer, eval_metrics, cur_step)
 
             if (cur_step % training_args.save_steps == 0 and cur_step > 0) or (cur_step == total_steps):
                 # save checkpoint after each epoch and push checkpoint to the hub
@@ -754,6 +741,8 @@ def main():
     # Eval after training
     if training_args.do_eval:
         eval_metrics = {}
+        eval_preds = []
+        eval_refs = []
         eval_loader = eval_data_collator(eval_dataset, eval_batch_size)
         for batch in tqdm(eval_loader, total=len(eval_dataset) // eval_batch_size, desc="Evaluating ...", position=2):
             labels = batch.pop("labels")
@@ -762,7 +751,8 @@ def main():
             labels = np.array([label for label in chain(*labels)])
             labels[np.array(chain(*batch["attention_mask"])) == 0] = -100
             preds, refs = get_labels(predictions, labels)
-            metric.add_batch(predictions=preds, references=refs)
+            eval_preds.extend(preds)
+            eval_refs.extend(refs)
 
         # evaluate also on leftover examples (not divisible by batch_size)
         num_leftover_samples = len(eval_dataset) % eval_batch_size
@@ -777,9 +767,10 @@ def main():
             predictions = eval_step(unreplicate(state), batch)
             labels[np.array(batch["attention_mask"]) == 0] = -100
             preds, refs = get_labels(predictions, labels)
-            metric.add_batch(predictions=preds, references=refs)
+            eval_preds.extend(preds)
+            eval_refs.extend(refs)
 
-        eval_metrics = compute_metrics()
+        eval_metrics = compute_metrics(eval_preds, eval_refs)
 
         if jax.process_index() == 0:
             eval_metrics = {f"eval_{metric_name}": value for metric_name, value in eval_metrics.items()}
