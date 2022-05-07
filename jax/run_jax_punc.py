@@ -629,7 +629,7 @@ def main():
 
     def compute_metrics(preds, refs):
       punc_marks = ['PERIOD', 'COMMA', 'COLON', 'QMARK', 'EXCLAM', 'SEMICOLON']
-      report = classification_report(refs[0], preds[0], digits=4, labels=punc_marks)
+      report = classification_report(refs, preds, digits=4, labels=punc_marks)
       return report
 
     logger.info(f"===== Starting training ({num_epochs} epochs) =====")
@@ -715,9 +715,7 @@ def main():
                     eval_preds.extend(preds)
                     eval_refs.extend(refs)
 
-                eval_metrics = compute_metrics(eval_preds, eval_refs)
-                print('preds', len(eval_preds[0]))
-                print('refs', len(eval_refs[0]))
+                eval_metrics = compute_metrics([**preds for preds in eval_preds], [**refs for refs in eval_refs])
                 if data_args.return_entity_level_metrics:
                     logger.info(f"Step... ({cur_step}/{total_steps} | Validation metrics: {eval_metrics}")
                 else:
@@ -770,7 +768,7 @@ def main():
             eval_preds.extend(preds)
             eval_refs.extend(refs)
 
-        eval_metrics = compute_metrics(eval_preds, eval_refs)
+        eval_metrics = compute_metrics([**preds for preds in eval_preds], [**refs for refs in eval_refs])
 
         if jax.process_index() == 0:
             eval_metrics = {f"eval_{metric_name}": value for metric_name, value in eval_metrics.items()}
