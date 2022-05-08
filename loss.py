@@ -198,8 +198,8 @@ class FocalLoss(_Loss):
         super(FocalLoss, self).__init__()
         self.gamma = gamma
         self.alpha = alpha
-        if alpha is not None:
-            self.alpha = torch.FloatTensor(alpha)
+        if isinstance(self.alpha,(float,int)): self.alpha = torch.Tensor([alpha,1-alpha])
+        if isinstance(self.alpha,list): self.alpha = torch.FloatTensor(alpha)
         self.reduction = reduction
 
     def forward(self, input, target):
@@ -217,7 +217,7 @@ class FocalLoss(_Loss):
             at = self.alpha.gather(0, target.squeeze(-1))
             logpt = logpt * at
 
-        loss = -1 * (1 - pt) ** self.gamma * logpt
+        loss = -1 * ((1 - pt) ** self.gamma) * logpt
         if self.reduction == "none":
             return loss
         if self.reduction == "mean":
@@ -252,11 +252,13 @@ class PolyLoss(_Loss):
                  ce_weight: Optional[torch.Tensor] = None,
                  reduction: str = 'mean',
                  epsilon: float = 1.0,
+                 with_logits: bool = True,
                  ) -> None:
         super().__init__()
         self.reduction = reduction
         self.epsilon = epsilon
         self.cross_entropy = nn.CrossEntropyLoss(weight=ce_weight, ignore_index=0)
+        self.with_logits = with_logits
 
     def forward(self, input: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
         """
@@ -269,8 +271,13 @@ class PolyLoss(_Loss):
         Raises:
             ValueError: When ``self.reduction`` is not one of ["mean", "sum", "none"].
        """
+        logits_size = input.shape[-1]
         self.ce_loss = self.cross_entropy(input, target)
-
+        
+        if len(input.shape) != len(target.shape):
+          target = F.one_hot(target, num_classes=logits_size).float()
+        if self.with_logits:
+          input = torch.nn.Softmax(dim=1)(input) if self.with_logits else input
         pt = (input * target).sum(dim=1)  # BH[WD]
         poly_loss = self.ce_loss + self.epsilon * (1 - pt)
 
@@ -283,3 +290,97 @@ class PolyLoss(_Loss):
         else:
             raise ValueError(f'Unsupported reduction: {self.reduction}, available options are ["mean", "sum", "none"].')
         return polyl
+
+class PolyFocalLoss(_Loss):
+    def __init__(self,
+                 reduction: str = 'mean',
+                 alpha: List[float] = None,
+                 epsilon: float = 1.0,
+                 gamma: float = 0.5,
+                 with_logits: bool = True,
+                 ) -> None:
+        super().__init__()
+        self.reduction = reduction
+        self.epsilon = epsilon
+        self.gamma = gamma
+        self.alpha = alpha
+        if isinstance(self.alpha,(float,int)): self.alpha = torch.Tensor([alpha,1-alpha])
+        if isinstance(self.alpha,list): self.alpha = torch.FloatTensor(alpha)
+
+    def forward(self, input: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            input: the shape should be BNH[WD], where N is the number of classes.
+                You can pass logits or probabilities as input, if pass logit, must set softmax=True
+            target: if target is in one-hot format, its shape should be BNH[WD],
+                if it is not one-hot encoded, it should has shape B1H[WD] or BH[WD], where N is the number of classes, 
+                It should contain binary values
+        Raises:
+            ValueError: When ``self.reduction`` is not one of ["mean", "sum", "none"].
+       """
+        # [N, 1]
+        target = target.unsqueeze(-1)
+        # [N, C]
+        pt = F.softmax(input, dim=-1)
+        logpt = F.log_softmax(input, dim=-1)
+        # [N]
+        pt = pt.gather(1, target).squeeze(-1)
+        logpt = logpt.gather(1, target).squeeze(-1)
+
+        if self.alpha is not None:
+            # [N] at[i] = alpha[target[i]]
+            at = self.alpha.gather(0, target.squeeze(-1))
+            logpt = logpt * at
+
+        self.focal_loss = -1 * (1 - pt) ** self.gamma * logpt
+
+        poly_loss = self.focal_loss + self.epsilon * ((1 - pt) ** (self.gamma + 1))
+
+        if self.reduction == 'mean':
+            polyl = torch.mean(poly_loss)  # the batch and channel average
+        elif self.reduction == 'sum':
+            polyl = torch.sum(poly_loss)  # sum over the batch and channel dims
+        elif self.reduction == 'none':
+            polyl = poly_loss
+        else:
+            raise ValueError(f'Unsupported reduction: {self.reduction}, available options are ["mean", "sum", "none"].')
+        return polyl
+
+class ComboLoss(_Loss):
+    def __init__(self, 
+                 reduction: str = 'mean',
+                 alpha: float = 0.75,
+                 ce_ratio: float = 0.5,
+                 epsilon: float = 1e-9,
+                 smooth: int = 1):
+        super(ComboLoss, self).__init__()
+        self.smooth = smooth
+        self.reduction = reduction
+        self.epsilon = epsilon
+        self.alpha = alpha
+        self.ce_ratio = ce_ratio
+
+    def forward(self, input, target):
+        
+        #flatten label and prediction tensors
+        input = input.view(-1)
+        target = target.view(-1)
+        
+        #True Positives, False Positives & False Negatives
+        intersection = (input * target).sum()    
+        dice = (2. * intersection + self.smooth) / (input.sum() + target.sum() + self.smooth)
+        
+        input = torch.clamp(input, self.epsilon, 1.0 - self.epsilon)       
+        ce_loss = - (self.alpha * ((target * torch.log(input)) + ((1 - self.alpha) * (1.0 - target) * torch.log(1.0 - input))))
+        if self.reduction == 'mean':
+            ce_loss = torch.mean(ce_loss)  # the batch and channel average
+        elif self.reduction == 'sum':
+            ce_loss = torch.sum(ce_loss)  # sum over the batch and channel dims
+        elif self.reduction == 'none':
+            ce_loss = ce_loss
+        else:
+            raise ValueError(f'Unsupported reduction: {self.reduction}, available options are ["mean", "sum", "none"].')
+
+        combo = (self.ce_ratio * ce_loss) - ((1 - self.ce_ratio) * dice)
+        
+        return combo
